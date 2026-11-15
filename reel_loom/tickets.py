@@ -1,11 +1,45 @@
 import json
 from .errors import require, missing
-from .values import identifier, now, canonical, object_body, integer
+from .values import identifier, now, canonical, digest, object_body, integer
+
+# Tickets still allowed to run; their frozen snapshots may be healed against
+# corrected source catalogs. Finished deliveries keep their history verbatim.
+OPEN_STATES = ("queued", "running", "failed", "cancelled")
 
 
 class Tickets:
     def __init__(self, db, planner, keys):
         self.db, self.planner, self.keys = db, planner, keys
+
+    def heal_snapshots(self, assets):
+        """Reconcile unfinished tickets with the sources' true composition.
+
+        Only the frozen source metadata (and the derived fingerprint) is
+        refreshed; reel document, look spec and ticket identity stay frozen so
+        retries reuse the original order without rebuilding it.
+        """
+        repaired = 0
+        with self.db.write_unit() as db:
+            rows = db.execute(
+                "SELECT id,snapshot,fingerprint FROM tickets WHERE state IN (?,?,?,?) ORDER BY created,id",
+                OPEN_STATES).fetchall()
+            for row in rows:
+                snapshot = json.loads(row["snapshot"])
+                changed = False
+                for source in snapshot.get("sources", {}).values():
+                    asset = assets.get(source["id"], db)
+                    if canonical(source.get("metadata")) != canonical(asset["metadata"]):
+                        source["metadata"] = asset["metadata"]
+                        changed = True
+                if not changed:
+                    continue
+                fingerprint = digest(snapshot)
+                db.execute("UPDATE tickets SET snapshot=?,fingerprint=?,updated=? WHERE id=?",
+                           (canonical(snapshot), fingerprint, now(), row["id"]))
+                self.db.event(db, row["id"], "snapshot_healed",
+                              {"fingerprint": fingerprint, "previous_fingerprint": row["fingerprint"]})
+                repaired += 1
+            return {"healed_tickets": repaired}
 
     def enqueue(self, body, key=None):
         object_body(body, ("reel", "revision", "look", "look_version"), ("reel", "look"))

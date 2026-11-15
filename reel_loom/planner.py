@@ -29,17 +29,16 @@ class Planner:
         return {**snapshot, "fingerprint": digest(snapshot)}
 
     def _input_roles(self, snapshot):
+        # Each slice stands on its own sound/picture composition: a genuinely
+        # silent source contributes no input audio stream and is filled with
+        # generated silence. Borrowing a previous slice's stream index pointed
+        # FFmpeg at the wrong input and failed whenever silence came first.
         roles = []
-        previous_audio = None
-        for position, item in enumerate(snapshot["document"]["slices"]):
+        for item in snapshot["document"]["slices"]:
             source = snapshot["sources"][item["asset"]]
             metadata = source["metadata"]
             video = select_stream(metadata, "video")
             audio = select_stream(metadata, "audio") if metadata.get("has_audio") else None
-            if audio is not None:
-                previous_audio = audio
-            elif position and video is not None:
-                audio = previous_audio
             roles.append({"video": video, "audio": audio})
         return roles
 
