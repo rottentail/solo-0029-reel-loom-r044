@@ -1,0 +1,463 @@
+{
+  "name": "solo-0029-reel-loom",
+  "project_shape": "backend",
+  "modules": [
+    {
+      "id": "analysis",
+      "path": "reel_loom/analysis.py",
+      "responsibility": "analysis"
+    },
+    {
+      "id": "api",
+      "path": "reel_loom/api.py",
+      "responsibility": "api"
+    },
+    {
+      "id": "application",
+      "path": "reel_loom/application.py",
+      "responsibility": "application"
+    },
+    {
+      "id": "artifacts",
+      "path": "reel_loom/artifacts.py",
+      "responsibility": "artifacts"
+    },
+    {
+      "id": "assets",
+      "path": "reel_loom/assets.py",
+      "responsibility": "assets"
+    },
+    {
+      "id": "batches",
+      "path": "reel_loom/batches.py",
+      "responsibility": "batches"
+    },
+    {
+      "id": "blobs",
+      "path": "reel_loom/blobs.py",
+      "responsibility": "blobs"
+    },
+    {
+      "id": "captions",
+      "path": "reel_loom/captions.py",
+      "responsibility": "captions"
+    },
+    {
+      "id": "conformance",
+      "path": "reel_loom/conformance.py",
+      "responsibility": "conformance"
+    },
+    {
+      "id": "database",
+      "path": "reel_loom/database.py",
+      "responsibility": "database"
+    },
+    {
+      "id": "frames",
+      "path": "reel_loom/frames.py",
+      "responsibility": "frames"
+    },
+    {
+      "id": "imprints",
+      "path": "reel_loom/imprints.py",
+      "responsibility": "imprints"
+    },
+    {
+      "id": "instance",
+      "path": "reel_loom/instance.py",
+      "responsibility": "instance"
+    },
+    {
+      "id": "lineage",
+      "path": "reel_loom/lineage.py",
+      "responsibility": "lineage"
+    },
+    {
+      "id": "looks",
+      "path": "reel_loom/looks.py",
+      "responsibility": "looks"
+    },
+    {
+      "id": "planner",
+      "path": "reel_loom/planner.py",
+      "responsibility": "planner"
+    },
+    {
+      "id": "probe",
+      "path": "reel_loom/probe.py",
+      "responsibility": "probe"
+    },
+    {
+      "id": "processes",
+      "path": "reel_loom/processes.py",
+      "responsibility": "processes"
+    },
+    {
+      "id": "reels",
+      "path": "reel_loom/reels.py",
+      "responsibility": "reels"
+    },
+    {
+      "id": "rendering",
+      "path": "reel_loom/rendering.py",
+      "responsibility": "rendering"
+    },
+    {
+      "id": "resources",
+      "path": "reel_loom/resources.py",
+      "responsibility": "resources"
+    },
+    {
+      "id": "samples",
+      "path": "reel_loom/samples.py",
+      "responsibility": "samples"
+    },
+    {
+      "id": "tickets",
+      "path": "reel_loom/tickets.py",
+      "responsibility": "tickets"
+    },
+    {
+      "id": "timebase",
+      "path": "reel_loom/timebase.py",
+      "responsibility": "timebase"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "ingest",
+      "name": "媒体接收与内容复用",
+      "entry": "POST /assets",
+      "success": "可解码媒体进入 ready 状态，相同内容复用",
+      "failure": "无效容器拒绝且不登记",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow ingest",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "assets",
+        "probe",
+        "blobs",
+        "database"
+      ]
+    },
+    {
+      "id": "revisions",
+      "name": "剪辑卷修订",
+      "entry": "POST/PUT /reels",
+      "success": "新头修订与历史修订同时可读",
+      "failure": "旧 If-Match 返回冲突",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow revisions",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "reels",
+        "timebase",
+        "database"
+      ]
+    },
+    {
+      "id": "looks",
+      "name": "输出版式版本化",
+      "entry": "PUT /looks/{id}",
+      "success": "版本递增且已排队版式固定",
+      "failure": "旧版写入前提失败",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow looks",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "looks",
+        "tickets",
+        "database"
+      ]
+    },
+    {
+      "id": "render",
+      "name": "冻结规划与声画编码",
+      "entry": "POST /tickets",
+      "success": "真实 MP4/WAV 成片与冻结指纹",
+      "failure": "不可兼容素材在入队前拒绝，编码失败可见",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow render",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "planner",
+        "tickets",
+        "rendering",
+        "processes",
+        "artifacts"
+      ]
+    },
+    {
+      "id": "signal",
+      "name": "音频电平与静音分析",
+      "entry": "POST /assets/{id}/signal",
+      "success": "PCM 电平与源时间静音区间可重复",
+      "failure": "未知参数拒绝",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow signal",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "analysis",
+        "samples",
+        "processes",
+        "database"
+      ]
+    },
+    {
+      "id": "waveform",
+      "name": "音频波形分桶",
+      "entry": "POST /assets/{id}/waveform",
+      "success": "采样区间和幅度统计可回读",
+      "failure": "非法桶数拒绝",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow waveform",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "analysis",
+        "samples",
+        "processes",
+        "database"
+      ]
+    },
+    {
+      "id": "loudness",
+      "name": "广播响度测量",
+      "entry": "POST /assets/{id}/loudness",
+      "success": "真实 R128 LUFS/dBTP 测量，静音非有限值显式表示",
+      "failure": "不支持的输入字段拒绝",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow loudness",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "analysis",
+        "processes",
+        "database"
+      ]
+    },
+    {
+      "id": "sheet",
+      "name": "媒体画面接触表",
+      "entry": "POST /assets/{id}/contact-sheet",
+      "success": "JPEG 画面索引与采样时间可下载",
+      "failure": "不合法布局拒绝",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow sheet",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "frames",
+        "processes",
+        "artifacts",
+        "blobs"
+      ]
+    },
+    {
+      "id": "captions",
+      "name": "字幕源轨与剪辑投影",
+      "entry": "POST /assets/{id}/cues + POST /reels/{id}/captions",
+      "success": "源字幕跨剪辑裁切后保留可播放的时间",
+      "failure": "损坏 SRT 拒绝",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow captions",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "captions",
+        "timebase",
+        "reels",
+        "database"
+      ]
+    },
+    {
+      "id": "imprint",
+      "name": "印本冻结与内容校验",
+      "entry": "POST /tickets/{id}/imprints",
+      "success": "ZIP 及 manifest 可校验，编辑不改变历史印本",
+      "failure": "未完成渲染不能打包",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow imprint",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "imprints",
+        "tickets",
+        "captions",
+        "blobs"
+      ]
+    },
+    {
+      "id": "cancel-retry",
+      "name": "取消与原单重试",
+      "entry": "POST /tickets/{id}/cancel,retry",
+      "success": "取消不提交半成品，重试保留冻结输入",
+      "failure": "成功任务不能重试",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow cancel-retry",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "tickets",
+        "rendering",
+        "processes",
+        "artifacts"
+      ]
+    },
+    {
+      "id": "recovery",
+      "name": "服务重启恢复",
+      "entry": "服务启动及 POST /tickets/{id}/retry",
+      "success": "旧 running 标为中断失败，可原单重试",
+      "failure": "实例锁防止第二进程误恢复",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow recovery",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "application",
+        "instance",
+        "tickets",
+        "rendering",
+        "database"
+      ]
+    },
+    {
+      "id": "resources",
+      "name": "引用资源保全",
+      "entry": "POST /assets/{id}/retire + POST /resources/sweep",
+      "success": "退役来源退出新编排，历史引用媒体保留",
+      "failure": "引用退役媒体的新稿拒绝",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow resources",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "resources",
+        "assets",
+        "tickets",
+        "blobs",
+        "database"
+      ]
+    },
+    {
+      "id": "matrix",
+      "name": "多版式原子入队",
+      "entry": "POST /matrices",
+      "success": "多版式全体入队，执行状态独立聚合",
+      "failure": "任一版式无效则不创建部分任务",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow matrix",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "batches",
+        "planner",
+        "tickets",
+        "database"
+      ]
+    },
+    {
+      "id": "conformance",
+      "name": "成片全解码验规",
+      "entry": "GET /artifacts/{id}/conformance",
+      "success": "全流解码、尺寸/采样/时长/帧率核验",
+      "failure": "非成片类型拒绝",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow conformance",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "conformance",
+        "probe",
+        "artifacts",
+        "tickets"
+      ]
+    },
+    {
+      "id": "lineage",
+      "name": "渲染血缘闭包",
+      "entry": "GET /tickets/{id}/lineage",
+      "success": "源内容、修订、版式、成片、印本的有向引用可追溯",
+      "failure": "未知任务拒绝",
+      "verification": ".venv/bin/python -m reel_loom.demo --workflow lineage",
+      "steps": [
+        "输入经公开入口到领域规则",
+        "跨媒体或持久化边界提交结果",
+        "回读结果并观察拒绝路径"
+      ],
+      "module_ids": [
+        "api",
+        "lineage",
+        "tickets",
+        "database"
+      ]
+    }
+  ],
+  "complexity": {
+    "mechanisms": [
+      "state_machine",
+      "resource_lifecycle",
+      "error_propagation",
+      "concurrency",
+      "versioning_audit",
+      "recovery_rollback",
+      "concurrency",
+      "export_freeze",
+      "time_semantics",
+      "capacity",
+      "idempotency",
+      "lineage",
+      "snapshot_consistency"
+    ]
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "language": "Python",
+  "project_shape": "backend",
+  "source_extensions": [
+    ".py"
+  ],
+  "build_command": ".venv/bin/python -m compileall -q reel_loom",
+  "testing": "deferred",
+  "workflow_checks": [
+    {
+      "workflow_id": "ingest",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow ingest"
+    },
+    {
+      "workflow_id": "revisions",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow revisions"
+    },
+    {
+      "workflow_id": "looks",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow looks"
+    },
+    {
+      "workflow_id": "render",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow render"
+    },
+    {
+      "workflow_id": "signal",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow signal"
+    },
+    {
+      "workflow_id": "waveform",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow waveform"
+    },
+    {
+      "workflow_id": "loudness",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow loudness"
+    },
+    {
+      "workflow_id": "sheet",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow sheet"
+    },
+    {
+      "workflow_id": "captions",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow captions"
+    },
+    {
+      "workflow_id": "imprint",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow imprint"
+    },
+    {
+      "workflow_id": "cancel-retry",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow cancel-retry"
+    },
+    {
+      "workflow_id": "recovery",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow recovery"
+    },
+    {
+      "workflow_id": "resources",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow resources"
+    },
+    {
+      "workflow_id": "matrix",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow matrix"
+    },
+    {
+      "workflow_id": "conformance",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow conformance"
+    },
+    {
+      "workflow_id": "lineage",
+      "command": ".venv/bin/python -m reel_loom.demo --workflow lineage"
+    }
+  ]
+}

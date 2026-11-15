@@ -1,0 +1,1396 @@
+{
+  "task_source_schema_version": 1,
+  "cc_feedback_profile": "cc-feedback-2611",
+  "project_domain": "游戏、图形与多媒体",
+  "project_subdirection": "音视频处理",
+  "supported_task_types": [
+    "功能开发",
+    "Bugfix",
+    "功能优化",
+    "质量保障",
+    "代码重构",
+    "技术讨论"
+  ],
+  "prompt_contract": {
+    "schema_version": 1,
+    "mode": "integrated",
+    "baseline_tier": "deep-task-ready",
+    "minimum_active_prompts": {
+      "功能开发": 10,
+      "功能优化": 10
+    },
+    "minimum_anchors": {
+      "功能开发": 15,
+      "功能优化": 15
+    },
+    "capacity_floor": {
+      "modules": 8,
+      "workflows": 10,
+      "mechanisms": 8,
+      "entities": 8,
+      "state_machines": 5,
+      "extension_seams": 12,
+      "tension_points": 10
+    }
+  },
+  "entities": [
+    {
+      "id": "asset",
+      "label": "媒体来源",
+      "relations": [
+        "asset.blob",
+        "slice.asset"
+      ],
+      "invariants": [
+        "ready 才能新引用，retired 不撤销旧冻结引用"
+      ]
+    },
+    {
+      "id": "blob",
+      "label": "不可变媒体内容",
+      "relations": [
+        "asset.blob",
+        "artifact.blob",
+        "imprint.blob"
+      ],
+      "invariants": [
+        "摘要即内容地址，提交前持久化字节"
+      ]
+    },
+    {
+      "id": "reel",
+      "label": "剪辑卷",
+      "relations": [
+        "reel.revisions"
+      ],
+      "invariants": [
+        "头修订递增，sealed 禁止改稿"
+      ]
+    },
+    {
+      "id": "revision",
+      "label": "剪辑修订",
+      "relations": [
+        "revision.slices"
+      ],
+      "invariants": [
+        "文档与 hash 写入后不可变"
+      ]
+    },
+    {
+      "id": "slice",
+      "label": "镜段",
+      "relations": [
+        "slice.asset",
+        "revision.slices"
+      ],
+      "invariants": [
+        "入出点位于源时长，卷时间连续"
+      ]
+    },
+    {
+      "id": "look",
+      "label": "输出版式",
+      "relations": [
+        "ticket.look_version"
+      ],
+      "invariants": [
+        "已有版式版本不可改写"
+      ]
+    },
+    {
+      "id": "cue_track",
+      "label": "字幕源轨",
+      "relations": [
+        "cue_track.asset"
+      ],
+      "invariants": [
+        "源时间合法且已导入轨不可变"
+      ]
+    },
+    {
+      "id": "ticket",
+      "label": "渲染单",
+      "relations": [
+        "ticket.snapshot",
+        "ticket.artifacts"
+      ],
+      "invariants": [
+        "冻结源闭包，完成与取消互斥"
+      ]
+    },
+    {
+      "id": "artifact",
+      "label": "派生产物",
+      "relations": [
+        "artifact.blob",
+        "artifact.ticket"
+      ],
+      "invariants": [
+        "产物提交与任务成功在同一事务"
+      ]
+    },
+    {
+      "id": "analysis",
+      "label": "音频测量",
+      "relations": [
+        "analysis.asset"
+      ],
+      "invariants": [
+        "内容与参数相同才复用"
+      ]
+    },
+    {
+      "id": "imprint",
+      "label": "交付印本",
+      "relations": [
+        "imprint.ticket",
+        "imprint.blob"
+      ],
+      "invariants": [
+        "交付清单与媒体字节均可校验"
+      ]
+    },
+    {
+      "id": "matrix",
+      "label": "渲染矩阵",
+      "relations": [
+        "matrix.tickets"
+      ],
+      "invariants": [
+        "入队全有全无，运行结果独立聚合"
+      ]
+    }
+  ],
+  "state_machines": [
+    {
+      "subject": "asset",
+      "states": [
+        "ready",
+        "retired"
+      ],
+      "transitions": [
+        "ready->retired",
+        "retired->ready"
+      ],
+      "invariants": [
+        "恢复须验证字节可用"
+      ]
+    },
+    {
+      "subject": "reel",
+      "states": [
+        "open",
+        "sealed"
+      ],
+      "transitions": [
+        "open->sealed"
+      ],
+      "invariants": [
+        "sealed 不可再写修订"
+      ]
+    },
+    {
+      "subject": "ticket",
+      "states": [
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "transitions": [
+        "queued->running",
+        "queued->cancelled",
+        "running->succeeded",
+        "running->failed",
+        "running->cancelled",
+        "failed->queued",
+        "cancelled->queued"
+      ],
+      "invariants": [
+        "成功不允许重试；重试仍使用原快照"
+      ]
+    },
+    {
+      "subject": "matrix",
+      "states": [
+        "queued",
+        "running",
+        "succeeded",
+        "finished_with_failures"
+      ],
+      "transitions": [
+        "queued->running",
+        "running->succeeded",
+        "running->finished_with_failures",
+        "finished_with_failures->running"
+      ],
+      "invariants": [
+        "整体状态由成员真实状态聚合"
+      ]
+    },
+    {
+      "subject": "blob",
+      "states": [
+        "temporary",
+        "durable_unregistered",
+        "registered",
+        "unreferenced",
+        "collected"
+      ],
+      "transitions": [
+        "temporary->durable_unregistered",
+        "durable_unregistered->registered",
+        "registered->unreferenced",
+        "unreferenced->collected"
+      ],
+      "invariants": [
+        "字节先 fsync 和原子替换再登记；未登记孤儿只报告"
+      ]
+    },
+    {
+      "subject": "imprint",
+      "states": [
+        "building",
+        "frozen",
+        "verified"
+      ],
+      "transitions": [
+        "building->frozen",
+        "frozen->verified"
+      ],
+      "invariants": [
+        "校验不改写冻结内容；building 只存在于 scratch"
+      ]
+    }
+  ],
+  "capability_families": [
+    {
+      "family": "分段流交付",
+      "occupied_by": [
+        "imprint"
+      ],
+      "available": true
+    },
+    {
+      "family": "替代配音版本",
+      "occupied_by": [
+        "render"
+      ],
+      "available": true
+    },
+    {
+      "family": "跨镜转场",
+      "occupied_by": [
+        "render"
+      ],
+      "available": true
+    },
+    {
+      "family": "非匀速镜段",
+      "occupied_by": [
+        "revisions"
+      ],
+      "available": true
+    },
+    {
+      "family": "时域遮挡层",
+      "occupied_by": [
+        "render"
+      ],
+      "available": true
+    },
+    {
+      "family": "运动重构图",
+      "occupied_by": [
+        "render"
+      ],
+      "available": true
+    },
+    {
+      "family": "声道干声分轨",
+      "occupied_by": [
+        "imprint"
+      ],
+      "available": true
+    },
+    {
+      "family": "解说侧链混音",
+      "occupied_by": [
+        "render"
+      ],
+      "available": true
+    },
+    {
+      "family": "运动补帧",
+      "occupied_by": [
+        "conformance"
+      ],
+      "available": true
+    },
+    {
+      "family": "场序适配",
+      "occupied_by": [
+        "render"
+      ],
+      "available": true
+    },
+    {
+      "family": "字幕画面合成",
+      "occupied_by": [
+        "captions"
+      ],
+      "available": true
+    },
+    {
+      "family": "镜头边界提案",
+      "occupied_by": [
+        "revisions"
+      ],
+      "available": true
+    },
+    {
+      "family": "版式时域对照",
+      "occupied_by": [
+        "matrix"
+      ],
+      "available": true
+    },
+    {
+      "family": "远端渲染领取",
+      "occupied_by": [
+        "recovery"
+      ],
+      "available": true
+    },
+    {
+      "family": "印本差量交接",
+      "occupied_by": [
+        "imprint"
+      ],
+      "available": true
+    }
+  ],
+  "extension_seams": [
+    {
+      "id": "streaming",
+      "anchor": "reel_loom/planner.py::compile + reel_loom/imprints.py::create",
+      "entry": "POST /tickets/{id}/imprints",
+      "distinct_outcome": "可播放的分段媒体与稳定的清单",
+      "mechanism": "export_freeze"
+    },
+    {
+      "id": "dubbing",
+      "anchor": "reel_loom/reels.py::normalize + reel_loom/planner.py::freeze",
+      "entry": "POST /tickets",
+      "distinct_outcome": "按配音版本生成同画异声成片",
+      "mechanism": "snapshot_consistency"
+    },
+    {
+      "id": "dissolve",
+      "anchor": "reel_loom/reels.py::normalize + reel_loom/planner.py::compile",
+      "entry": "POST /tickets",
+      "distinct_outcome": "转场后的成片与正确字幕时域",
+      "mechanism": "time_semantics"
+    },
+    {
+      "id": "retiming",
+      "anchor": "reel_loom/reels.py::normalize + reel_loom/timebase.py::project_interval",
+      "entry": "POST/PUT /reels",
+      "distinct_outcome": "变速成片的字幕和声音正确对齐",
+      "mechanism": "policy_rules"
+    },
+    {
+      "id": "redaction",
+      "anchor": "reel_loom/planner.py::freeze + reel_loom/imprints.py::create",
+      "entry": "POST /tickets",
+      "distinct_outcome": "遮挡处理后的成片及可核验覆盖信息",
+      "mechanism": "authorization"
+    },
+    {
+      "id": "reframe",
+      "anchor": "reel_loom/looks.py::normalize + reel_loom/planner.py::compile",
+      "entry": "POST /tickets",
+      "distinct_outcome": "可复演的动态竖屏构图",
+      "mechanism": "resource_lifecycle"
+    },
+    {
+      "id": "stems",
+      "anchor": "reel_loom/looks.py::normalize + reel_loom/artifacts.py::commit_render",
+      "entry": "POST /tickets/{id}/imprints",
+      "distinct_outcome": "母版与独立分轨组成完整交付",
+      "mechanism": "lineage"
+    },
+    {
+      "id": "ducking",
+      "anchor": "reel_loom/reels.py::normalize + reel_loom/planner.py::compile",
+      "entry": "POST /tickets",
+      "distinct_outcome": "有旁白时压低背景且整卷可复听",
+      "mechanism": "concurrency"
+    },
+    {
+      "id": "interpolation",
+      "anchor": "reel_loom/looks.py::normalize + reel_loom/conformance.py::inspect",
+      "entry": "GET /artifacts/{id}/conformance",
+      "distinct_outcome": "高帧率平滑成片及验规结果",
+      "mechanism": "capacity"
+    },
+    {
+      "id": "deinterlace",
+      "anchor": "reel_loom/probe.py::inspect_media + reel_loom/planner.py::compile",
+      "entry": "POST /tickets",
+      "distinct_outcome": "按来源正确还原运动且输出逐行成片",
+      "mechanism": "state_machine"
+    },
+    {
+      "id": "burnin",
+      "anchor": "reel_loom/captions.py::project + reel_loom/planner.py::freeze",
+      "entry": "POST /assets/{id}/cues + POST /reels/{id}/captions",
+      "distinct_outcome": "实际画面内含字幕且可追溯",
+      "mechanism": "versioning_audit"
+    },
+    {
+      "id": "scenes",
+      "anchor": "reel_loom/analysis.py::run + reel_loom/reels.py::normalize",
+      "entry": "POST/PUT /reels",
+      "distinct_outcome": "可审阅并应用的镜段提案",
+      "mechanism": "ranking_reorder"
+    },
+    {
+      "id": "comparison",
+      "anchor": "reel_loom/batches.py::submit + reel_loom/planner.py::compile",
+      "entry": "POST /matrices",
+      "distinct_outcome": "同步并排可复听的版式比较产物",
+      "mechanism": "concurrency"
+    },
+    {
+      "id": "leases",
+      "anchor": "reel_loom/tickets.py::claim + reel_loom/instance.py::acquire",
+      "entry": "服务启动及 POST /tickets/{id}/retry",
+      "distinct_outcome": "多进程可接力但不重复提交",
+      "mechanism": "ranking_reorder"
+    },
+    {
+      "id": "delta",
+      "anchor": "reel_loom/imprints.py::create + reel_loom/resources.py::sweep",
+      "entry": "POST /tickets/{id}/imprints",
+      "distinct_outcome": "可验证重建的差量媒体交付",
+      "mechanism": "delete_removal"
+    }
+  ],
+  "tension_points": [
+    {
+      "workflow_id": "ingest",
+      "description": "允许内容复用但禁止把退役来源重新隐式启用",
+      "observable_failure": "旧来源被替换或无效媒体可被编排"
+    },
+    {
+      "workflow_id": "revisions",
+      "description": "编辑新稿与历史镜段位置不可变之间的约束",
+      "observable_failure": "旧版成片引用被后续编辑改变"
+    },
+    {
+      "workflow_id": "looks",
+      "description": "更新版式与排队任务保持原处理参数",
+      "observable_failure": "原渲染单的版式静默漂移"
+    },
+    {
+      "workflow_id": "render",
+      "description": "源闭包冻结与资源退出新编排后的旧任务继续执行",
+      "observable_failure": "内容退休使既有冻结渲染无故失败"
+    },
+    {
+      "workflow_id": "signal",
+      "description": "可复用分析结果与参数语义隔离",
+      "observable_failure": "不同静音门限错误复用同一分析"
+    },
+    {
+      "workflow_id": "waveform",
+      "description": "有限桶数与完整采样覆盖之间的约束",
+      "observable_failure": "尾部样本丢失或重复纳入"
+    },
+    {
+      "workflow_id": "loudness",
+      "description": "解码测量值与可序列化分析事实之间的约束",
+      "observable_failure": "静音导致非标准 JSON 或假零响度"
+    },
+    {
+      "workflow_id": "sheet",
+      "description": "固定容量版面与全时长画面覆盖",
+      "observable_failure": "画面时间与标称抽样索引不相符"
+    },
+    {
+      "workflow_id": "captions",
+      "description": "同一源多次出现与字幕映射重复之间的约束",
+      "observable_failure": "源时间被误认为成片时间"
+    },
+    {
+      "workflow_id": "imprint",
+      "description": "交付事实不可变与继续剪辑之间的约束",
+      "observable_failure": "后来修订改变历史交付包"
+    },
+    {
+      "workflow_id": "cancel-retry",
+      "description": "取消请求与产物提交事务的竞争",
+      "observable_failure": "已经确认取消的作业留下成功产物"
+    },
+    {
+      "workflow_id": "recovery",
+      "description": "不猜测未提交编码结果与用户可恢复执行之间的约束",
+      "observable_failure": "重启后旧任务永久 running 或被重复提交"
+    },
+    {
+      "workflow_id": "resources",
+      "description": "回收空间与历史渲染可用性之间的约束",
+      "observable_failure": "尚有冻结引用的源字节被清除"
+    },
+    {
+      "workflow_id": "matrix",
+      "description": "整体提交与各自编码结果独立之间的约束",
+      "observable_failure": "无效矩阵残留一部分已排队作业"
+    },
+    {
+      "workflow_id": "conformance",
+      "description": "容器声明与真实帧序列之间的约束",
+      "observable_failure": "只信元数据导致不可解码成片被接受"
+    },
+    {
+      "workflow_id": "lineage",
+      "description": "同一来源重复剪辑与唯一内容节点之间的约束",
+      "observable_failure": "图节点重复或缺少印本引用"
+    }
+  ],
+  "prompt_anchors": [
+    {
+      "id": "streaming",
+      "task_type": "功能开发",
+      "capability_family": "分段流交付",
+      "subject": "streaming",
+      "state": "MP4 成片交付后",
+      "invariant": "切换码率仍沿用同一剪辑内容",
+      "observable": "可播放的分段媒体与稳定的清单",
+      "primary_mechanism": "export_freeze",
+      "workflow_ids": [
+        "imprint"
+      ],
+      "source_anchors": [
+        "reel_loom/planner.py",
+        "reel_loom/imprints.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/planner.py",
+          "reel_loom/imprints.py"
+        ],
+        "functions": [
+          "compile",
+          "create"
+        ]
+      },
+      "extension_seam_id": "streaming"
+    },
+    {
+      "id": "dubbing",
+      "task_type": "功能开发",
+      "capability_family": "替代配音版本",
+      "subject": "dubbing",
+      "state": "剪辑卷已有原声",
+      "invariant": "配音替换不能改动镜段画面位置",
+      "observable": "按配音版本生成同画异声成片",
+      "primary_mechanism": "snapshot_consistency",
+      "workflow_ids": [
+        "render"
+      ],
+      "source_anchors": [
+        "reel_loom/reels.py",
+        "reel_loom/planner.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/reels.py",
+          "reel_loom/planner.py"
+        ],
+        "functions": [
+          "normalize",
+          "freeze"
+        ]
+      },
+      "extension_seam_id": "dubbing"
+    },
+    {
+      "id": "dissolve",
+      "task_type": "功能开发",
+      "capability_family": "跨镜转场",
+      "subject": "dissolve",
+      "state": "硬切片段相接",
+      "invariant": "交叠时间必须同时约束字幕与声画时长",
+      "observable": "转场后的成片与正确字幕时域",
+      "primary_mechanism": "time_semantics",
+      "workflow_ids": [
+        "render"
+      ],
+      "source_anchors": [
+        "reel_loom/reels.py",
+        "reel_loom/planner.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/reels.py",
+          "reel_loom/planner.py"
+        ],
+        "functions": [
+          "normalize",
+          "compile"
+        ]
+      },
+      "extension_seam_id": "dissolve"
+    },
+    {
+      "id": "retiming",
+      "task_type": "功能开发",
+      "capability_family": "非匀速镜段",
+      "subject": "retiming",
+      "state": "源时间与卷时间一一平移",
+      "invariant": "变速改变卷时间而不篡改源轨",
+      "observable": "变速成片的字幕和声音正确对齐",
+      "primary_mechanism": "policy_rules",
+      "workflow_ids": [
+        "revisions"
+      ],
+      "source_anchors": [
+        "reel_loom/reels.py",
+        "reel_loom/timebase.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/reels.py",
+          "reel_loom/timebase.py"
+        ],
+        "functions": [
+          "normalize",
+          "project_interval"
+        ]
+      },
+      "extension_seam_id": "retiming"
+    },
+    {
+      "id": "redaction",
+      "task_type": "功能开发",
+      "capability_family": "时域遮挡层",
+      "subject": "redaction",
+      "state": "未经遮挡的源存在",
+      "invariant": "交付不能暴露要求遮挡的画面",
+      "observable": "遮挡处理后的成片及可核验覆盖信息",
+      "primary_mechanism": "authorization",
+      "workflow_ids": [
+        "render"
+      ],
+      "source_anchors": [
+        "reel_loom/planner.py",
+        "reel_loom/imprints.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/planner.py",
+          "reel_loom/imprints.py"
+        ],
+        "functions": [
+          "freeze",
+          "create"
+        ]
+      },
+      "extension_seam_id": "redaction"
+    },
+    {
+      "id": "reframe",
+      "task_type": "功能开发",
+      "capability_family": "运动重构图",
+      "subject": "reframe",
+      "state": "固定版式裁切",
+      "invariant": "不同输出尺寸保持可解释的主体区域",
+      "observable": "可复演的动态竖屏构图",
+      "primary_mechanism": "resource_lifecycle",
+      "workflow_ids": [
+        "render"
+      ],
+      "source_anchors": [
+        "reel_loom/looks.py",
+        "reel_loom/planner.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/looks.py",
+          "reel_loom/planner.py"
+        ],
+        "functions": [
+          "normalize",
+          "compile"
+        ]
+      },
+      "extension_seam_id": "reframe"
+    },
+    {
+      "id": "stems",
+      "task_type": "功能开发",
+      "capability_family": "声道干声分轨",
+      "subject": "stems",
+      "state": "源拥有可探测声道布局",
+      "invariant": "分轨输出可以追溯回源声道",
+      "observable": "母版与独立分轨组成完整交付",
+      "primary_mechanism": "lineage",
+      "workflow_ids": [
+        "imprint"
+      ],
+      "source_anchors": [
+        "reel_loom/looks.py",
+        "reel_loom/artifacts.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/looks.py",
+          "reel_loom/artifacts.py"
+        ],
+        "functions": [
+          "normalize",
+          "commit_render"
+        ]
+      },
+      "extension_seam_id": "stems"
+    },
+    {
+      "id": "ducking",
+      "task_type": "功能开发",
+      "capability_family": "解说侧链混音",
+      "subject": "ducking",
+      "state": "原声单轨跟随镜段",
+      "invariant": "旁白可懂度与原声恢复自然兼顾",
+      "observable": "有旁白时压低背景且整卷可复听",
+      "primary_mechanism": "concurrency",
+      "workflow_ids": [
+        "render"
+      ],
+      "source_anchors": [
+        "reel_loom/reels.py",
+        "reel_loom/planner.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/reels.py",
+          "reel_loom/planner.py"
+        ],
+        "functions": [
+          "normalize",
+          "compile"
+        ]
+      },
+      "extension_seam_id": "ducking"
+    },
+    {
+      "id": "interpolation",
+      "task_type": "功能开发",
+      "capability_family": "运动补帧",
+      "subject": "interpolation",
+      "state": "当前输出按 fps 重采样",
+      "invariant": "补帧不能跨独立镜段伪造中间画面",
+      "observable": "高帧率平滑成片及验规结果",
+      "primary_mechanism": "capacity",
+      "workflow_ids": [
+        "conformance"
+      ],
+      "source_anchors": [
+        "reel_loom/looks.py",
+        "reel_loom/conformance.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/looks.py",
+          "reel_loom/conformance.py"
+        ],
+        "functions": [
+          "normalize",
+          "inspect"
+        ]
+      },
+      "extension_seam_id": "interpolation"
+    },
+    {
+      "id": "deinterlace",
+      "task_type": "功能开发",
+      "capability_family": "场序适配",
+      "subject": "deinterlace",
+      "state": "逐行与隔行素材均可探测",
+      "invariant": "不能把逐行源按隔行源降质处理",
+      "observable": "按来源正确还原运动且输出逐行成片",
+      "primary_mechanism": "state_machine",
+      "workflow_ids": [
+        "render"
+      ],
+      "source_anchors": [
+        "reel_loom/probe.py",
+        "reel_loom/planner.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/probe.py",
+          "reel_loom/planner.py"
+        ],
+        "functions": [
+          "inspect_media",
+          "compile"
+        ]
+      },
+      "extension_seam_id": "deinterlace"
+    },
+    {
+      "id": "burnin",
+      "task_type": "功能开发",
+      "capability_family": "字幕画面合成",
+      "subject": "burnin",
+      "state": "字幕可独立投影",
+      "invariant": "已排队字幕外观与字形资源固定",
+      "observable": "实际画面内含字幕且可追溯",
+      "primary_mechanism": "versioning_audit",
+      "workflow_ids": [
+        "captions"
+      ],
+      "source_anchors": [
+        "reel_loom/captions.py",
+        "reel_loom/planner.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/captions.py",
+          "reel_loom/planner.py"
+        ],
+        "functions": [
+          "project",
+          "freeze"
+        ]
+      },
+      "extension_seam_id": "burnin"
+    },
+    {
+      "id": "scenes",
+      "task_type": "功能开发",
+      "capability_family": "镜头边界提案",
+      "subject": "scenes",
+      "state": "人工指定镜段",
+      "invariant": "自动切分建议不得覆盖人工修订",
+      "observable": "可审阅并应用的镜段提案",
+      "primary_mechanism": "ranking_reorder",
+      "workflow_ids": [
+        "revisions"
+      ],
+      "source_anchors": [
+        "reel_loom/analysis.py",
+        "reel_loom/reels.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/analysis.py",
+          "reel_loom/reels.py"
+        ],
+        "functions": [
+          "run",
+          "normalize"
+        ]
+      },
+      "extension_seam_id": "scenes"
+    },
+    {
+      "id": "comparison",
+      "task_type": "功能开发",
+      "capability_family": "版式时域对照",
+      "subject": "comparison",
+      "state": "多版式独立成片",
+      "invariant": "对照必须比较同一剪辑时刻",
+      "observable": "同步并排可复听的版式比较产物",
+      "primary_mechanism": "concurrency",
+      "workflow_ids": [
+        "matrix"
+      ],
+      "source_anchors": [
+        "reel_loom/batches.py",
+        "reel_loom/planner.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/batches.py",
+          "reel_loom/planner.py"
+        ],
+        "functions": [
+          "submit",
+          "compile"
+        ]
+      },
+      "extension_seam_id": "comparison"
+    },
+    {
+      "id": "leases",
+      "task_type": "功能开发",
+      "capability_family": "远端渲染领取",
+      "subject": "leases",
+      "state": "单实例独占渲染",
+      "invariant": "同一渲染单最多一个有效提交者",
+      "observable": "多进程可接力但不重复提交",
+      "primary_mechanism": "ranking_reorder",
+      "workflow_ids": [
+        "recovery"
+      ],
+      "source_anchors": [
+        "reel_loom/tickets.py",
+        "reel_loom/instance.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/tickets.py",
+          "reel_loom/instance.py"
+        ],
+        "functions": [
+          "claim",
+          "acquire"
+        ]
+      },
+      "extension_seam_id": "leases"
+    },
+    {
+      "id": "delta",
+      "task_type": "功能开发",
+      "capability_family": "印本差量交接",
+      "subject": "delta",
+      "state": "全量 ZIP 可验证",
+      "invariant": "差量依赖存在时基底不可被误回收",
+      "observable": "可验证重建的差量媒体交付",
+      "primary_mechanism": "delete_removal",
+      "workflow_ids": [
+        "imprint"
+      ],
+      "source_anchors": [
+        "reel_loom/imprints.py",
+        "reel_loom/resources.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/imprints.py",
+          "reel_loom/resources.py"
+        ],
+        "functions": [
+          "create",
+          "sweep"
+        ]
+      },
+      "extension_seam_id": "delta"
+    },
+    {
+      "id": "resume-upload",
+      "task_type": "功能优化",
+      "capability_family": "媒体接收续传",
+      "subject": "resume-upload",
+      "state": "接收大素材中断",
+      "invariant": "未完整素材不能进入镜段引用",
+      "observable": "断续接收后只出现一个可用素材",
+      "primary_mechanism": "recovery_rollback",
+      "workflow_ids": [
+        "ingest"
+      ],
+      "source_anchors": [
+        "reel_loom/assets.py",
+        "reel_loom/blobs.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/assets.py",
+          "reel_loom/blobs.py"
+        ],
+        "functions": [
+          "ingest",
+          "put"
+        ]
+      }
+    },
+    {
+      "id": "ripple",
+      "task_type": "功能优化",
+      "capability_family": "剪辑卷连动调整",
+      "subject": "ripple",
+      "state": "已有头修订继续剪辑",
+      "invariant": "旧修订及字幕轨不可被新编辑改写",
+      "observable": "镜段调整后字幕与渲染指向一致",
+      "primary_mechanism": "concurrency",
+      "workflow_ids": [
+        "revisions"
+      ],
+      "source_anchors": [
+        "reel_loom/reels.py",
+        "reel_loom/captions.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/reels.py",
+          "reel_loom/captions.py"
+        ],
+        "functions": [
+          "replace",
+          "project"
+        ]
+      }
+    },
+    {
+      "id": "aspect",
+      "task_type": "功能优化",
+      "capability_family": "异构画幅适配",
+      "subject": "aspect",
+      "state": "混合像素比例来源",
+      "invariant": "素材显示比例与成片版式同时成立",
+      "observable": "含异形像素与方向信息素材正确构图",
+      "primary_mechanism": "policy_rules",
+      "workflow_ids": [
+        "render"
+      ],
+      "source_anchors": [
+        "reel_loom/probe.py",
+        "reel_loom/planner.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/probe.py",
+          "reel_loom/planner.py"
+        ],
+        "functions": [
+          "inspect_media",
+          "compile"
+        ]
+      }
+    },
+    {
+      "id": "silent",
+      "task_type": "功能优化",
+      "capability_family": "缺声镜段试听",
+      "subject": "silent",
+      "state": "视频镜段可能无声",
+      "invariant": "声画总时长不因补声改变",
+      "observable": "显式可辨的缺声解释与连续试听",
+      "primary_mechanism": "resource_lifecycle",
+      "workflow_ids": [
+        "render"
+      ],
+      "source_anchors": [
+        "reel_loom/planner.py",
+        "reel_loom/conformance.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/planner.py",
+          "reel_loom/conformance.py"
+        ],
+        "functions": [
+          "compile",
+          "inspect"
+        ]
+      }
+    },
+    {
+      "id": "silence-edit",
+      "task_type": "功能优化",
+      "capability_family": "静音分析辅助剪辑",
+      "subject": "silence-edit",
+      "state": "已有静音区间分析",
+      "invariant": "删静音不切断需要保留的人声尾部",
+      "observable": "审阅静音结果后安全迭代既有剪辑",
+      "primary_mechanism": "time_semantics",
+      "workflow_ids": [
+        "signal"
+      ],
+      "source_anchors": [
+        "reel_loom/analysis.py",
+        "reel_loom/reels.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/analysis.py",
+          "reel_loom/reels.py"
+        ],
+        "functions": [
+          "run",
+          "replace"
+        ]
+      }
+    },
+    {
+      "id": "wave-reel",
+      "task_type": "功能优化",
+      "capability_family": "剪辑波形映射",
+      "subject": "wave-reel",
+      "state": "源波形分桶可用",
+      "invariant": "重复源镜段的采样引用不能混淆",
+      "observable": "波形随修订表达切除与重复片段",
+      "primary_mechanism": "lineage",
+      "workflow_ids": [
+        "waveform"
+      ],
+      "source_anchors": [
+        "reel_loom/analysis.py",
+        "reel_loom/timebase.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/analysis.py",
+          "reel_loom/timebase.py"
+        ],
+        "functions": [
+          "run",
+          "project_interval"
+        ]
+      }
+    },
+    {
+      "id": "cue-flow",
+      "task_type": "功能优化",
+      "capability_family": "字幕重叠续读",
+      "subject": "cue-flow",
+      "state": "字幕在源上可重叠",
+      "invariant": "输出可读性与各轨信息完整兼顾",
+      "observable": "跨剪辑字幕具有稳定的续读表现",
+      "primary_mechanism": "ranking_reorder",
+      "workflow_ids": [
+        "captions"
+      ],
+      "source_anchors": [
+        "reel_loom/captions.py",
+        "reel_loom/timebase.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/captions.py",
+          "reel_loom/timebase.py"
+        ],
+        "functions": [
+          "project",
+          "project_interval"
+        ]
+      }
+    },
+    {
+      "id": "reuse-render",
+      "task_type": "功能优化",
+      "capability_family": "失败成片续作",
+      "subject": "reuse-render",
+      "state": "编码失败需要整卷重做",
+      "invariant": "复用旧中间结果不能混入新输入",
+      "observable": "失败后可复用已完成镜段并正确成片",
+      "primary_mechanism": "idempotency",
+      "workflow_ids": [
+        "cancel-retry"
+      ],
+      "source_anchors": [
+        "reel_loom/tickets.py",
+        "reel_loom/artifacts.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/tickets.py",
+          "reel_loom/artifacts.py"
+        ],
+        "functions": [
+          "retry",
+          "commit_render"
+        ]
+      }
+    },
+    {
+      "id": "fairness",
+      "task_type": "功能优化",
+      "capability_family": "矩阵队列公平推进",
+      "subject": "fairness",
+      "state": "矩阵共享渲染队列",
+      "invariant": "小卷有机会完成且已入队顺序可解释",
+      "observable": "大矩阵与独立小卷均可推进",
+      "primary_mechanism": "ranking_reorder",
+      "workflow_ids": [
+        "matrix"
+      ],
+      "source_anchors": [
+        "reel_loom/batches.py",
+        "reel_loom/tickets.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/batches.py",
+          "reel_loom/tickets.py"
+        ],
+        "functions": [
+          "submit",
+          "claim"
+        ]
+      }
+    },
+    {
+      "id": "running-cancel",
+      "task_type": "功能优化",
+      "capability_family": "运行中止可确认",
+      "subject": "running-cancel",
+      "state": "运行中任务可请求取消",
+      "invariant": "完成事实与取消事实不能双重成立",
+      "observable": "取消返回可区分请求与已终止",
+      "primary_mechanism": "state_machine",
+      "workflow_ids": [
+        "cancel-retry"
+      ],
+      "source_anchors": [
+        "reel_loom/tickets.py",
+        "reel_loom/processes.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/tickets.py",
+          "reel_loom/processes.py"
+        ],
+        "functions": [
+          "cancel",
+          "run"
+        ]
+      }
+    },
+    {
+      "id": "restart-prefix",
+      "task_type": "功能优化",
+      "capability_family": "中断渲染恢复判定",
+      "subject": "restart-prefix",
+      "state": "中断任务标为失败",
+      "invariant": "不能凭残留文件猜测完整成片",
+      "observable": "重启后能解释并复用可靠的已编码范围",
+      "primary_mechanism": "snapshot_consistency",
+      "workflow_ids": [
+        "recovery"
+      ],
+      "source_anchors": [
+        "reel_loom/tickets.py",
+        "reel_loom/artifacts.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/tickets.py",
+          "reel_loom/artifacts.py"
+        ],
+        "functions": [
+          "recover",
+          "commit_render"
+        ]
+      }
+    },
+    {
+      "id": "look-matrix",
+      "task_type": "功能优化",
+      "capability_family": "版式修订矩阵重提",
+      "subject": "look-matrix",
+      "state": "矩阵按旧版式提交",
+      "invariant": "重提不改变旧结果且避免重复编码相同分支",
+      "observable": "按版式实际变更重新派生所需结果",
+      "primary_mechanism": "concurrency",
+      "workflow_ids": [
+        "matrix"
+      ],
+      "source_anchors": [
+        "reel_loom/batches.py",
+        "reel_loom/looks.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/batches.py",
+          "reel_loom/looks.py"
+        ],
+        "functions": [
+          "submit",
+          "put"
+        ]
+      }
+    },
+    {
+      "id": "sheet-cut",
+      "task_type": "功能优化",
+      "capability_family": "画面索引抽样优化",
+      "subject": "sheet-cut",
+      "state": "等间隔抽样可下载",
+      "invariant": "短镜头覆盖与固定格数同时成立",
+      "observable": "抽样在有限画面格内反映镜头结构",
+      "primary_mechanism": "capacity",
+      "workflow_ids": [
+        "sheet"
+      ],
+      "source_anchors": [
+        "reel_loom/frames.py",
+        "reel_loom/probe.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/frames.py",
+          "reel_loom/probe.py"
+        ],
+        "functions": [
+          "contact_sheet",
+          "inspect_media"
+        ]
+      }
+    },
+    {
+      "id": "caption-package",
+      "task_type": "功能优化",
+      "capability_family": "字幕随印本一致交付",
+      "subject": "caption-package",
+      "state": "印本可附投影字幕",
+      "invariant": "字幕语言选择变化不能修改历史印本",
+      "observable": "多语印本可复验且不会混合旧新轨",
+      "primary_mechanism": "export_freeze",
+      "workflow_ids": [
+        "imprint"
+      ],
+      "source_anchors": [
+        "reel_loom/captions.py",
+        "reel_loom/imprints.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/captions.py",
+          "reel_loom/imprints.py"
+        ],
+        "functions": [
+          "project",
+          "create"
+        ]
+      }
+    },
+    {
+      "id": "reference-gc",
+      "task_type": "功能优化",
+      "capability_family": "退役媒体释放",
+      "subject": "reference-gc",
+      "state": "退役来源仍保留字节",
+      "invariant": "释放空间不破坏有效印本及可执行渲染",
+      "observable": "可解释的按引用保全与有界回收",
+      "primary_mechanism": "delete_removal",
+      "workflow_ids": [
+        "resources"
+      ],
+      "source_anchors": [
+        "reel_loom/resources.py",
+        "reel_loom/reels.py"
+      ],
+      "existing_touch_points": {
+        "files": [
+          "reel_loom/resources.py",
+          "reel_loom/reels.py"
+        ],
+        "functions": [
+          "sweep",
+          "get"
+        ]
+      }
+    }
+  ],
+  "bugfix_preparation": {
+    "mode": "injected_on_private_branch",
+    "authorization": "用户要求在当前项目预埋困难级Bugfix，健康分支只更新适用性画像。",
+    "basis": "已有渲染执行、产物提交、启动恢复及印本交付链路，支持跨持久化边界的缺陷设计与独立复现；不声称健康基线已存在缺陷。"
+  }
+}

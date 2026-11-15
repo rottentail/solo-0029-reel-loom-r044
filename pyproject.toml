@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "reel-loom"
+version = "0.1.0"
+description = "Revisioned audiovisual composition and rendition service"
+requires-python = ">=3.11"
+dependencies = ["av>=14,<17", "imageio-ffmpeg>=0.6,<0.7"]
+[project.scripts]
+reel-loom-server = "reel_loom.server:main"
+[tool.setuptools.packages.find]
+include = ["reel_loom*"]
